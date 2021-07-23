@@ -209,8 +209,13 @@ public:
             m_sinTheta[i] = std::sin(angle);
             m_densityMap[i] = i/255.0f;
         }
-        m_cosPhi[255] = m_sinPhi[255] = 0;
-        m_cosTheta[255] = m_sinTheta[255] = 0;
+        
+        //m_cosPhi[255] = m_sinPhi[255] = 0;
+        //m_cosTheta[255] = m_sinTheta[255] = 0;
+        
+        //Changes fiber rendering
+        m_cosPhi[255] = 1; m_sinPhi[255] = 0;
+        m_cosTheta[255] = -1; m_sinTheta[255] = 0;
         m_densityMap[255] = 1.0f;
     }
 
@@ -284,6 +289,16 @@ public:
             resolved.filename().string().c_str(), m_res.x, m_res.y, m_res.z, m_channels, format.c_str(),
             memString(m_mmap->getSize()).c_str(), m_dataAABB.toString().c_str());
         m_data = (uint8_t *) (((float *) m_mmap->getData()) + 12);
+
+
+        //Changes fiber rendering
+
+        if( m_channels == 3 && m_volumeType == EFloat32 )
+        {
+            float* x = (float*)&m_data[0];
+            double* d = (double*)&m_data[0];
+            int a = 1;
+        }
     }
 
     /**
@@ -521,6 +536,28 @@ public:
                         }
                     }
                     break;
+
+                //Changes Fiber Rendering
+
+                case EUInt8: {
+                    for (int k=0; k<8; ++k) {
+                        uint32_t index = (((k & 4) ? z2 : z1) * m_res.y +
+                            ((k & 2) ? y2 : y1)) * m_res.x + ((k & 1) ? x2 : x1);
+                        Float factor = ((k & 1) ? fx : _fx) * ((k & 2) ? fy : _fy)
+                            * ((k & 4) ? fz : _fz);
+                        Vector d = lookupQuantizedDirection(index, true);
+
+                        tensor(0, 0) += factor * d.x * d.x;
+                        tensor(0, 1) += factor * d.x * d.y;
+                        tensor(0, 2) += factor * d.x * d.z;
+                        tensor(1, 1) += factor * d.y * d.y;
+                        tensor(1, 2) += factor * d.y * d.z;
+                        tensor(2, 2) += factor * d.z * d.z;
+                    }
+                }
+
+                break;
+
                 case EQuantizedDirections: {
                         for (int k=0; k<8; ++k) {
                             uint32_t index = (((k & 4) ? z2 : z1) * m_res.y +
@@ -603,6 +640,20 @@ protected:
             m_sinPhi[phi] * m_sinTheta[theta],
             m_cosTheta[theta]
         );
+    }
+
+    //Changes Fiber Rendering
+
+    FINLINE Vector lookupQuantizedDirection(size_t index, bool check) const {
+        uint8_t theta = m_data[3*index], phi = m_data[3*index+1], flag = m_data[3*index+2];
+        if( flag )
+            return Vector(
+                            m_cosPhi[phi] * m_sinTheta[theta],
+                            m_sinPhi[phi] * m_sinTheta[theta],
+                            m_cosTheta[theta]
+                        );
+        else
+            return Vector( 0.0f, 0.0f, 0.0f );
     }
 
 protected:
